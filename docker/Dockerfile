@@ -13,6 +13,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Install system dependencies
 # hadolint ignore=DL3008,DL3013
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
         unzip curl gnupg libgfortran5 libgbm1 tzdata netcat-openbsd \
         libasound2t64 libatk1.0-0 libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 \
@@ -24,10 +25,10 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
         libvulkan1 mesa-vulkan-drivers && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_18.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && \
     # Install node and yarn
-    apt-get install -yq --no-install-recommends nodejs && \
+    apt-get install -yq --no-install-recommends nodejs=24.22.1-1nodesource1 && \
     curl -LO https://github.com/yarnpkg/yarn/releases/download/v1.22.19/yarn_1.22.19_all.deb \
         && dpkg -i yarn_1.22.19_all.deb \
         && rm yarn_1.22.19_all.deb && \
@@ -84,6 +85,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # Install system dependencies
 # hadolint ignore=DL3008,DL3013
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
         curl gnupg libgfortran5 libgbm1 tzdata netcat-openbsd \
         libasound2t64 libatk1.0-0 libc6 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 \
@@ -95,10 +97,10 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
         libvulkan1 mesa-vulkan-drivers && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_18.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && \
     # Install node and yarn
-    apt-get install -yq --no-install-recommends nodejs && \
+    apt-get install -yq --no-install-recommends nodejs=24.22.1-1nodesource1 && \
     curl -LO https://github.com/yarnpkg/yarn/releases/download/v1.22.19/yarn_1.22.19_all.deb \
         && dpkg -i yarn_1.22.19_all.deb \
         && rm yarn_1.22.19_all.deb && \
@@ -134,6 +136,8 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh && \
 # hadolint ignore=DL3006
 FROM build-${TARGETARCH} AS build
 RUN echo "Running common build flow of AnythingLLM image for all architectures"
+# Fail the build if the installed Node.js is not the exact pinned version
+RUN node -v | grep -qx 'v24.22.1'
 
 USER anythingllm
 WORKDIR /app
@@ -142,7 +146,7 @@ WORKDIR /app
 # Use BUILDPLATFORM to run on the native host architecture (not emulated).
 # This avoids esbuild crashing under QEMU when cross-compiling.
 # The output (static HTML/CSS/JS) is platform-independent.
-FROM --platform=$BUILDPLATFORM node:18-slim AS frontend-build
+FROM --platform=$BUILDPLATFORM node:24.22.1-slim AS frontend-build
 WORKDIR /app/frontend
 COPY ./frontend/package.json ./frontend/yarn.lock ./
 RUN yarn install --network-timeout 100000 && yarn cache clean
