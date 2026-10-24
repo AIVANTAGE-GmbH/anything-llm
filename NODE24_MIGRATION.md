@@ -1,7 +1,9 @@
 # Node 18 → Node 24 migration report (AnythingLLM v1.16.1 fork)
 
 Branch: `node24-v1.16.1`. It starts at upstream commit `35c58d89` (the upstream `v1.16.1` tag, which our fork does not carry).
-Date of analysis: 2026-10-24. All testing was local. Nothing was pushed, and no remote environment or real credentials were used.
+Date of analysis: 2026-10-24. All testing was local. No images were pushed, and no remote environment or real credentials were used.
+
+> **Applied to `master` (v1.19.0).** The Dockerfile commit was cherry-picked onto `master` (`a5bb8b9c`, v1.19.0) and the full verification was repeated there. See §10. Sections 1–9 describe the original v1.16.1 run.
 
 ## 1. Summary and recommendation
 
@@ -226,3 +228,34 @@ The test harness (mock LLM, flow script, encryption canary, native/undici probes
 2. **Pin the frontend base image by digest.** `node:24.22.1-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205` is optional hardening. The tag is mutable, but `nodejs` in the runtime stages is pinned exactly.
 3. **SQL-agent TLS (F-16).** Test the real target databases, especially ones reached by IP address or older servers.
 4. **Production rollout.** Back up `/app/server/storage` (SQLite + `.env` with `SIG_KEY`/`SIG_SALT`) first. Rollback to the Node 18 image is data-compatible: migrations are unchanged, and ciphertexts work in both directions.
+
+## 10. Retest on `master` (v1.19.0)
+
+The Dockerfile change cherry-picked cleanly onto `master` (`a5bb8b9c`, 265 commits after v1.16.1). Master still used Node 18 (`node_18.x`, `node:18-slim`). Every check from §5–§7 was repeated with images built from master: `m-node24-{arm64,amd64}`, plus an unmodified master Dockerfile as the `m-node18-arm64` baseline.
+
+**What changed between v1.16.1 and master that matters here:**
+- **App code static rescan:** still no hits for any checklist item.
+  - New: `server/utils/files/index.js:766` calls `fs.rmdirSync` on an empty directory, without `recursive`. That's fine.
+  - New: `server/utils/AiProviders/llmman/index.js:198-213` uses the same npm-undici `Agent` pattern as F-05.
+- **Unchanged since v1.16.1:** EncryptionManager, EncryptionWorker and both comKey modules.
+  - `patchSdkTimeouts.js` changed only its SDK retry seeding. The undici dispatcher code is unchanged.
+- **Dependency changes:** `@mintplex-labs/mdpdf` 0.1.10 (napi-rs, loads and runs on 24), `@qdrant/js-client-rest` 1.18.0 (nested undici 6.28.1), and `weaviate-client` 3.9.0 (nice-grpc / grpc-js 1.14.6), which replaces `weaviate-ts-client`. Both new clients load on 24.
+  - New scan hits are the same false-positive classes as F-09/F-12/F-14: package-local `util`, a guarded `new Buffer`, and a constant cipher list.
+  - Still 0 `engines` violations and no `module-sync` packages.
+
+| Check | Node 18 master (baseline) | Node 24 master arm64 | Node 24 master amd64 (QEMU) |
+|---|---|---|---|
+| Runtime versions | 18.20.8 | 24.22.1 / Brotli 1.2.0 / OpenSSL 3.5.9 / modules 137 / napi 10 / undici 7.30.1 | same. `libbrotli1` 1.1.0-2build2, Chrome for Testing 119.0.6045.105 |
+| Native addon probe (§4 list) | – | 10/10 | 10/10 |
+| undici dispatcher probe (F-05) | – | 6/6 | – |
+| Encryption: Node 18 ciphertexts + Node 18 JWT decrypt on 24; comKey round-trip | seeded | 6/6 | 6/6 |
+| Rollback: Node 18 decrypts Node 24 ciphertexts | 3/3 | – | – |
+| Older SQLite DB (first 20 migrations, seeded row) → boot | – | 20 applied, 40/40 recorded, `legacy-ws` intact | – |
+| End-to-end flows (§6) | 25/25 | 25/25 | 25/25 |
+| Runtime warnings with `--trace-deprecation --trace-warnings` | 0 | 0 | 0 |
+| Jest (88 suites / 2098 tests) | 2098/2098 | 2098/2098 (×2) | – |
+
+**Jest note:** the first full Jest run on Node 24 timed out once, in `server/__tests__/utils/AiProviders/embeddedLemonade/engine.test.js` › "leaves lemond's pick alone without an NVIDIA GPU". That run overlapped with the amd64 QEMU build, which saturated the CPU.
+- Rerunning that suite alone gave 5/5 passes on both Node 18 and Node 24.
+- Two further full runs on Node 24 gave 2098/2098 each.
+- Classified as a load-dependent flaky test, not a Node 24 regression.
