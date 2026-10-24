@@ -259,3 +259,11 @@ The Dockerfile change cherry-picked cleanly onto `master` (`a5bb8b9c`, 265 commi
 - Rerunning that suite alone gave 5/5 passes on both Node 18 and Node 24.
 - Two further full runs on Node 24 gave 2098/2098 each.
 - Classified as a load-dependent flaky test, not a Node 24 regression.
+
+## 11. Addendum: bundled root-CA store (found after the master push)
+
+| Sev | Location | Issue | Evidence | Fix | Status |
+|---|---|---|---|---|---|
+| MEDIUM (deployment-dependent) | All outbound TLS from Node: global `fetch`, provider SDKs, and `pg` for PGVector with `sslmode=require` (`server/utils/vectorDbProviders/pgvector/index.js:115`) | Node's bundled root store shrank from **150 roots (18.20.8) to 118 (24.22.1)**. 42 roots were removed, among them DigiCert Global Root CA, DigiCert High Assurance EV, Baltimore CyberTrust, GlobalSign Root CA, Comodo AAA Certificate Services, Go Daddy / Starfield Class 2, the Entrust roots, GTS Root R2, and the emSign / eMudhra roots. A server whose chain can *only* reach one of the removed roots fails verification on Node 24. With `pg` 8.11.5, `sslmode=require` maps to `ssl: {}`, which means full verification. | `tls.rootCertificates` diffed between the two images. Handshake test from both images, 2026-10-24: OpenAI, Anthropic, Google Generative Language, Mistral, Groq, OpenRouter, Together, Cohere, DeepSeek, AWS Bedrock (eu-central-1) and northflank.com / api.northflank.com all verify on 24.22.1. Google-fronted APIs chain via GTS Root R4, Northflank via ISRG Root X1. | None needed for those endpoints. For private endpoints, e.g. a managed Postgres addon, confirm the issuer, or supply the CA via `NODE_EXTRA_CA_CERTS`. | Verified for the listed public endpoints. Postgres addon certificate unverified (not reachable from here). |
+
+The frontend build stage is now pinned to `node:24.22.1-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205` (multi-arch index digest).
